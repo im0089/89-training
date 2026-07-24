@@ -35,25 +35,50 @@ public class OrderService : IOrderService
     public async Task<ServiceResult<Order>> CreateOrderAsync(int customerId, IReadOnlyList<NewOrderLine> lines)
     {
         var customer = await _customerRepository.GetByIdAsync(customerId);
-        if (customer is null)
-            return ServiceResult<Order>.Fail("找不到指定的客戶");
 
-        if (lines is null || lines.Count == 0)
-            return ServiceResult<Order>.Fail("訂單至少需要一項商品");
+        var validationError = ValidateOrderRequest(customer, lines);
+        if (validationError is not null)
+            return ServiceResult<Order>.Fail(validationError);
 
-        if (lines.Any(l => l.Quantity <= 0))
-            return ServiceResult<Order>.Fail("商品數量必須大於 0");
-
-        if (lines.Select(l => l.ProductId).Distinct().Count() != lines.Count)
-            return ServiceResult<Order>.Fail("同一商品請勿重複加入，請調整數量即可");
-
-        var errors = new List<string>();
         var order = new Order
         {
-            CustomerId = customer.Id,
+            CustomerId = customer!.Id,
             Status = OrderStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
+
+        var lineErrors = await BuildOrderItemsAsync(order, lines);
+        if (lineErrors.Count > 0)
+            return ServiceResult<Order>.Fail(lineErrors);
+
+        await _orderRepository.AddAsync(order);
+        await _orderRepository.SaveChangesAsync();
+
+        return ServiceResult<Order>.Ok(order);
+    }
+
+    // 建單前的前置守衛：通過回傳 null，否則回傳單一錯誤訊息。
+    private static string? ValidateOrderRequest(Customer? customer, IReadOnlyList<NewOrderLine> lines)
+    {
+        if (customer is null)
+            return "找不到指定的客戶";
+
+        if (lines is null || lines.Count == 0)
+            return "訂單至少需要一項商品";
+
+        if (lines.Any(l => l.Quantity <= 0))
+            return "商品數量必須大於 0";
+
+        if (lines.Select(l => l.ProductId).Distinct().Count() != lines.Count)
+            return "同一商品請勿重複加入，請調整數量即可";
+
+        return null;
+    }
+
+    // 逐項處理明細：檢查停售/庫存、扣庫存並填入 order.Items，回傳累積的錯誤清單（空清單代表全數成功）。
+    private async Task<List<string>> BuildOrderItemsAsync(Order order, IReadOnlyList<NewOrderLine> lines)
+    {
+        var errors = new List<string>();
 
         foreach (var line in lines)
         {
@@ -80,13 +105,7 @@ public class OrderService : IOrderService
             });
         }
 
-        if (errors.Count > 0)
-            return ServiceResult<Order>.Fail(errors);
-
-        await _orderRepository.AddAsync(order);
-        await _orderRepository.SaveChangesAsync();
-
-        return ServiceResult<Order>.Ok(order);
+        return errors;
     }
 
     public async Task<ServiceResult<Order>> CancelOrderAsync(int id)
