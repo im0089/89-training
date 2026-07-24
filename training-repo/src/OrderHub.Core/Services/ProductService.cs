@@ -6,13 +6,29 @@ namespace OrderHub.Core.Services;
 public class ProductService : IProductService
 {
     private readonly IProductRepository _productRepository;
+    private readonly IOrderRepository _orderRepository;
 
-    public ProductService(IProductRepository productRepository)
+    public ProductService(IProductRepository productRepository, IOrderRepository orderRepository)
     {
         _productRepository = productRepository;
+        _orderRepository = orderRepository;
     }
 
     public Task<IReadOnlyList<Product>> GetAllAsync() => _productRepository.GetAllAsync();
 
     public Task<IReadOnlyList<Product>> GetActiveAsync() => _productRepository.GetActiveAsync();
+
+    public async Task<IReadOnlyList<LowStockProduct>> GetLowStockAsync(int threshold)
+    {
+        var products = await _productRepository.GetLowStockAsync(threshold);
+
+        // 近 30 天時間窗（CreatedAt 存 UTC），一次彙總這批商品的銷量。
+        var since = DateTime.UtcNow.AddDays(-30);
+        var sold = await _orderRepository.GetSoldQuantitiesSinceAsync(
+            since, products.Select(p => p.Id).ToList());
+
+        return products
+            .Select(p => new LowStockProduct(p, sold.TryGetValue(p.Id, out var q) ? q : 0))
+            .ToList();
+    }
 }

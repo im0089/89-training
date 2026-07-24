@@ -1,0 +1,53 @@
+@model LowStockListViewModel
+@{
+    ViewData["Title"] = "低庫存商品";
+}
+
+<h1 class="h3 mb-3">低庫存商品</h1>
+
+<form method="get" class="mb-3">
+    <label for="Threshold" class="form-label">現有庫存查詢</label>
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <div class="input-group" style="width: 12rem;">
+                <span class="input-group-text">低於</span>
+                <input type="number" id="Threshold" name="Threshold" value="@Model.Threshold" min="1"
+                       class="form-control" />
+                <span class="input-group-text">件</span>
+            </div>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">查詢</button>
+        </div>
+    </div>
+    <div class="form-text">列出「上架中且庫存低於此數量」的商品，依庫存由少到多排序；庫存低於 5 件會以紅色標示。</div>
+    <span asp-validation-for="Threshold" class="text-danger"></span>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr>
+            <th>SKU</th>
+            <th>名稱</th>
+            <th class="text-end">現有庫存</th>
+            <th class="text-end">近 30 天售出</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Products.Count == 0)
+        {
+            <tr>
+                <td colspan="4" class="text-center text-muted py-4">沒有低庫存商品</td>
+            </tr>
+        }
+        @foreach (var product in Model.Products)
+        {
+            <tr class="@(product.StockQuantity < 5 ? "table-danger" : "")">
+                <td>@product.Sku</td>
+                <td>@product.Name</td>
+                <td class="text-end">@product.StockQuantity</td>
+                <td class="text-end">@product.SoldLast30Days</td>
+            </tr>
+        }
+    </tbody>
+</table>
