@@ -41,6 +41,34 @@ public class OrderServiceQueryTests
     }
 
     [Fact]
+    public async Task GetOrders_FirstPageContainsNewestOrder_AndLastPageIsNotEmpty()
+    {
+        using var db = TestSetup.CreateContext();
+        var service = TestSetup.CreateOrderService(db);
+        var customer = TestSetup.AddCustomer(db);
+
+        // 45 筆訂單，pageSize 20 → 共 3 頁；建立時間越晚代表越新
+        for (var i = 0; i < 45; i++)
+            db.Orders.Add(new Order { CustomerId = customer.Id, Status = OrderStatus.Confirmed, CreatedAt = DateTime.UtcNow.AddMinutes(-i) });
+        db.SaveChanges();
+
+        // 最新的訂單（CreatedAt 最大者）
+        var newest = db.Orders.OrderByDescending(o => o.CreatedAt).First();
+
+        var firstPage = await service.GetOrdersAsync(1, 20, null);
+        var lastPage = await service.GetOrdersAsync(firstPage.TotalPages, 20, null);
+
+        // 第一頁應含最新訂單（修復前 Skip(20) 會跳過最新的 20 筆而失敗）
+        Assert.Equal(20, firstPage.Items.Count);
+        Assert.Contains(firstPage.Items, o => o.Id == newest.Id);
+
+        // 最後一頁不可為空（修復前 Skip(page*pageSize) 會跳過全部而回傳空清單）
+        Assert.Equal(3, firstPage.TotalPages);
+        Assert.NotEmpty(lastPage.Items);
+        Assert.Equal(5, lastPage.Items.Count);
+    }
+
+    [Fact]
     public async Task GetCustomerOrders_ReturnsOnlyThatCustomersOrders()
     {
         using var db = TestSetup.CreateContext();
