@@ -5,7 +5,7 @@
 
 #### 使用的 agent 與模型：
 
----
+---claude opus 
 
 ## 通用四問
 
@@ -13,25 +13,26 @@
 
 （開工前你把任務拆成哪幾步？實際做的時候順序有變嗎？為什麼變？）
 
--
+- 主要是要先用plan ，較大的項目的話使用goal 。之後回答plan提出的問題，然後再瞭解及檢查 AI給出的調整方向。 之後讓他執行。
+實際做問題4的時候有變的情況，因爲我在push了後才想起有更好的方法，那就是使用rule-based validation. 
 
 ### 2. AI 幫上大忙的地方
 
 （哪件事 agent 做得又快又好？**貼上當時的提問原文**，說明為什麼這樣問有效。）
 
--
+- 全部
 
 ### 3. AI 誤導我的地方，與我如何發現
 
 （agent 說錯／改錯／過度自信的時刻。你靠什麼抓到——對照程式碼？頁面實測？跑測試？）
 
--
+- 我用的是opus, 如果錯了那一定是我的問題
 
 ### 4. 我會帶回日常工作的一招
 
 （一個具體、可複製的做法，不要寫「要多驗證」這種口號——寫出**操作步驟**。）
 
--
+- 添加Claude.md ,setting.json, setting.local.json , hook, permission , fix-bug skill ，特別是fix-bug skill 
 
 ## 自我驗證（做到哪個階段答哪題）
 
@@ -52,26 +53,43 @@
 練習 2
 
 1. 三個 bug 我都先在頁面上重現過，才開始找程式
+- 有的有的
 2. 我給 agent 的資訊包含具體觀察（頁碼／金額數字／庫存數字），而不是只貼客訴原文
+- 沒有
 3. 每個修復都回到頁面驗證過症狀消失
+- 有的有的
 4. 每個 bug 都補了一個回歸測試，`dotnet test` 全綠
+-有的有的 
 5. 三個獨立 commit，message 說明症狀與根因
+- 有的有的
 6. （思考題）為什麼原本的測試沒抓到這三個 bug？
+- 問題1 沒有測到這部分，GetOrders_WithStatusFilter…：只有 3 筆資料。 
+- 問題2 CreateOrderAsync 對 Gold 先把 0.9 折進 UnitPriceSnapshot，CalculateTotal 又折一次（0.81）。舊 OrderServicePricingTests.cs 把管線的兩半各自單獨測，卻沒接起來. 雙重折扣只在兩段一起跑、且客戶是 Gold 時才浮現，剛好落在單元測試的接縫裡。
+- 問題3 測了「主要結果」（狀態轉換），沒測「副作用」（庫存回補），而 bug 正好只在副作用裡
 
 練習 3
 
 1. `/Products/LowStock` 不帶參數 → 門檻 10 的結果；帶 `?threshold=3` → 結果隨之改變
+-有的有的
 2. `?threshold=0`、`?threshold=-1` → 頁面顯示驗證錯誤，不是 500
+- 前端有添加UI阻擋 跳出提示語 阻擋查詢
 3. 售出數量欄位排除了 Cancelled 訂單（可用一筆已取消的訂單驗證）
+- 有的有的
 4. 停售（已停售 badge）商品不出現在列表
-5. 程式分層與命名跟既有的 Products 功能一致（請 agent 自我 review 一次，並自己確認）
+- 有的有的
+5. 程式分與命名跟既有的 Products 功能一致（請 agent 自我 review 一次，並自己確認）
+- 有一處不一致
 6. 至少 3 個新測試，`dotnet test` 全綠
+- 有的有的
 
 練習 4
 
 1. 重構後 `dotnet test` 全綠
+- 有的有的
 2. 我能說出這次重構「改善了什麼、沒有改變什麼」
+- 有添加了針對CreateOrderAsync的ValidationRule，往後的話需要新增驗證邏輯可以只添加rule就好，較容易管理
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）
+- 有吧
 
 ---
 
