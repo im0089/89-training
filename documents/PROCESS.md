@@ -40,8 +40,14 @@
 練習 1
 
 1. 我能不看筆記說出三個專案（Web/Core/Infrastructure）各自的職責
+ - Web is frontend , Controller, View, ViewModels exists here . Controller only control display of view, logic part will call to Service layer 
+ - Core consists of Services, which is the logic part, and Interaces, which consist of interface of the three repository files. And also Domain, which is the model that derive from DB table. 
+ -Infrastructure is where Seeder, Migration, and Repositories lies. Repositories uses linq to get data from database. 
 2. 我核對過 agent 描述的建單流程，且**至少找出一處不精確或過度簡化的說法**
+- Tier discounts defined once 不精確：折扣其實散在 CreateOrderAsync（僅 Gold，寫進 snapshot）與 CalculateTotal（全等級再套一次）兩處，導致 Gold 經真實建單流程會被折兩次；且被當作 source of truth 的 pricing。
 3. 我知道商業邏輯應該放在哪一層、新增頁面要動哪些地方
+- 商業邏輯在core layer. 
+- 要看新增什麽頁面， 如果是全新的頁面（需要利用navbar跳轉的頁面，那需要調整shared/_layout.cshtml）, 新增一個Controller file, 針對該頁面的功能需要新增對應的ViewModel及Views裏再開一個folder。如果需要使用新的data 那就要加entity field 在domain ,之後需要ef migration。 之後新增Repositories file. 裏面會使用linq與db 交互。 交互的結果會通過Service 的新增method 在傳到controller. 再有controller return View 顯示
 
 練習 2
 
