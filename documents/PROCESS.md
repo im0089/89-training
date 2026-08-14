@@ -91,6 +91,63 @@
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）
 - 有吧
 
+### 第二階段 — MCP Server
+
+練習 0 — 接 Playwright MCP
+
+- 環境卡了一次：`@playwright/mcp` 的 engines 寫 `node>=18`，但相依的 playwright 核心實際要 `node>=20`，Node 18.18.2 下直接吐 `Playwright requires Node.js 20 or higher.`。用 nvm 升到 v22.23.2 才過。**套件自己宣告的 engines 不等於相依樹的真實需求。**
+- 對比活動 1 練習 2（人工重現雙重折扣 bug）：
+  - 當時：自己開瀏覽器 → `/Orders/Create` → 選金卡會員 → 選商品 → 送出 → 讀 Details 的數字 → 心算 4640×0.9 對不對。每改一次程式就重跑一遍。
+  - 現在：一句「建立一筆新訂單，截圖結果頁」，agent 自己 `browser_navigate` → `browser_snapshot` → `browser_fill_form` → `browser_click` → `browser_take_screenshot`，出來訂單 #205（小計 4,640 折後 4,176）。
+  - **差別不是「快」，是「可重複」。** 人工重現靠手感，步驟會漂；agent 那串工具呼叫是明確的，改完程式再叫一次就跑同一條路徑。
+  - 關鍵是 `browser_snapshot` 回的是無障礙樹（帶 ref）而不是圖片，agent 不用看圖猜按鈕在哪。
+
+練習 2 — MCP Inspector
+
+- 三個工具的 description、參數說明都如寫的一樣，`GetOrder` → `get_order` 由 SDK 自動轉 snake_case。
+- `low_stock(10)` 回的 5 筆和 `/Products/LowStock` 頁面完全一致（SKU-1005/1048/1023/1032/1014，庫存 2/2/3/4/4）。
+- `get_order(99999)` 回「找不到訂單 99999」，不是 exception dump。
+- **意外發現**：三個工具的 annotations 全是 `null`。對照 Playwright 的工具（`browser_take_screenshot` 有 `readOnlyHint:true`、`browser_click` 有 `destructiveHint:true`），差距很明顯。這個發現直接變成練習 4 要修的東西。
+
+練習 3 — before/after 對照
+
+同一個問題「哪些商品庫存低於 5？」
+
+| | 關掉 MCP | 開啟 MCP |
+| --- | --- | --- |
+| 工具呼叫 | 6 次 | 1 次 |
+| 過程 | grep（14 檔命中）→ 讀 appsettings 找連線字串 → 賭有 sqlcmd → 讀 `Product.cs` → 自己寫 SQL → 讀輸出（中文亂碼 `�O�� �P�֧��`） | `low_stock(threshold=5)` |
+| 「排除停售商品」怎麼決定 | 自己猜的 | description 明寫「仍在販售」，agent 照做並主動告知使用者 |
+
+- **收穫不是省下 5 次呼叫，是那兩個判斷題**（排除停售、升冪排序）。沒工具時猜對純屬運氣；換個人問很可能就把停售商品也列進去，而且不會有人發現，因為答案看起來很合理。工具的 description 把業務規則變成 agent 讀得到的合約。
+- 踩的坑：**`.mcp.json` 要放在「啟動 claude 的那個目錄」，不是 git repo 根目錄。** 專案包在 `training-repo/` 底下，開在 `89-training` 就整份設定沒被讀到。失敗訊號還很弱 —— `/mcp` 仍看得到 playwright（那是 local scope 來的），很容易誤判成正常。查 `~/.claude.json` 看到 `enabledMcpjsonServers: []` 才確定。
+
+練習 4 — cancel_order
+
+- **標註的預設值真的會反咬**：`ReadOnly` 預設 `false`、`Destructive` 預設 `true`。唯讀工具「懶得標」等於向 client 宣告自己可能有破壞性。補上 `ReadOnly = true` 後才變成 `{"readOnlyHint":true}`。
+- `cancel_order` 只轉接 `OrderService.CancelOrderAsync`，狀態檢查與庫存回補都在 service 裡，不重寫一份。
+- 驗證：取消訂單 205 **有跳權限確認**；SKU-1002 庫存 `100 → 102`；再取消一次回「取消失敗:狀態為 Cancelled 的訂單不可取消」，庫存停在 102 沒被重複回補 —— 剛好把 `idempotentHint:false` 演示出來（重複呼叫不是沒效果，是被明確拒絕）。
+- **標註只是 hint 不是強制。** 這裡真正擋住重複取消的是 `OrderService` 的狀態檢查，不是 annotations；client 亂來也擋得住。
+
+練習 5 — Resources 與 Prompts（5c 第 3 點）
+
+**折扣規則用 Resource 給，和讓 agent 自己讀 `OrderService.cs`，差在哪？**
+
+- 讀程式碼：agent 要先找到檔案、看懂 switch expression，還要判斷這段是不是唯一的折扣邏輯 —— 活動 1 練習 2 就證明過折扣曾經散在兩處。每次問都重做一遍，不同 agent 的解讀還可能不同。
+- Resource：一段人話，client 決定何時放進 context。實測問「Gold 會員買 1000 元應付多少」直接答 900，沒去翻程式碼。
+- 代價：多了一份**會過期的真相**。resource 字串的「Gold 9 折」和 `GetDiscountRate` 的 `0.10m` 現在一致，但沒有任何機制保證同步 —— 改折扣時不會有編譯錯誤或測試失敗提醒你。跟練習 1「金額別自己算」是同一堂課換個地方犯。想避免可以注入 `IOrderService` 動態組內容，這次照活動文件先留靜態版本。
+
+**prompt 範本放在 server，和每個人自己打一段話，差在哪？**
+
+- **團隊共用**：寫一次，所有接這台 server 的人都有 `/mcp__orderhub__low_stock_report`，不用互相問「你都怎麼問的」。
+- **版本控制**：範本在 `OrderHubPrompts.cs` 裡，跟程式碼一起 review、一起進 git，改了看得到 diff。各自打的話，那段話只存在每個人的聊天記錄裡。
+- **規則改版要改幾個地方**：server 一處，vs N 個人各自的習慣（而且沒人知道誰還在用舊版）。
+- 順帶看到兩個原語的合體：prompt 展開後引導 agent 去呼叫 `low_stock` tool。
+
+跨練習的一件事
+
+- 每次改完 MCP server 程式碼都要重連才生效，而且 `dotnet run` 會鎖住輸出 DLL。build 失敗了三次，都是因為某處還跑著 `OrderHub.Mcp`（Inspector 一次、Claude Code 兩次）。改 MCP server 的固定動作：**先停掉在跑的 server → build → 重連**。
+
 ---
 
 ## 附錄：值得留下的對話片段
