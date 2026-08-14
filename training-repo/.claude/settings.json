@@ -6,6 +6,8 @@
       "Bash(git reset --hard *)",
       "Read(**/appsettings.Production.json)",
       "Read(**/*.pfx)",
+      "Read(**/UserSecrets/**)",
+      "Bash(dotnet user-secrets list*)",
       "Edit(src/OrderHub.Infrastructure/Migrations/**)"
     ],
     "ask": [
