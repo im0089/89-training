@@ -1,5 +1,15 @@
 {
   "mcpServers": {
+    "orderhub": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/OrderHub.Mcp"
+      ],
+      "env": {}
+    },
     "playwright": {
       "type": "stdio",
       "command": "npx",
